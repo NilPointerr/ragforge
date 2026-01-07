@@ -30,33 +30,40 @@ def ask(question: str, use_graphrag: Optional[bool] = None) -> Dict[str, Any]:
     """
     The main entry point for the RAG/GraphRAG pipeline.
     
-    Uses hybrid retrieval combining vector search and knowledge graph traversal
-    when GraphRAG is enabled.
+    Automatically uses GraphRAG if Neo4j is configured and available,
+    otherwise falls back to standard RAG. No errors or warnings are shown.
     
     Args:
         question: The user's question.
-        use_graphrag: Override GraphRAG setting (None uses settings.enable_graphrag).
+        use_graphrag: Override GraphRAG (None = auto-detect, True = force enable, False = disable).
         
     Returns:
         A dictionary containing "facts" (list) and "answer" (str).
     """
     try:
-        use_graph = use_graphrag if use_graphrag is not None else settings.enable_graphrag
+        # Auto-detect: use GraphRAG if explicitly enabled OR if Neo4j is available
+        if use_graphrag is None:
+            # Auto-detect: check if GraphRAG is available
+            graph_store = get_graph_store()
+            use_graph = (graph_store.driver is not None)
+        else:
+            use_graph = use_graphrag
         
         # 1. Vector Retrieval
         store = get_vector_store()
         retrieved_docs = store.search(question, limit=settings.max_context_chunks)
         
-        # 2. Graph Retrieval (if enabled)
+        # 2. Graph Retrieval (if available)
         graph_context = ""
         if use_graph:
             try:
                 graph_store = get_graph_store()
-                graph_context = graph_store.get_graph_context(question, max_entities=5)
-                if graph_context:
-                    logger.info("Retrieved graph context for query")
-            except Exception as e:
-                logger.warning(f"GraphRAG retrieval failed, continuing with vector search only: {e}")
+                # Only try graph retrieval if Neo4j is actually connected
+                if graph_store.driver is not None:
+                    graph_context = graph_store.get_graph_context(question, max_entities=5)
+            except Exception:
+                # Silently fallback - no error logging
+                pass
         
         # 3. Context Construction
         context_parts = []
@@ -135,19 +142,18 @@ def ingest(texts: List[str], use_graphrag: Optional[bool] = None) -> None:
     Add documents to the knowledge base for retrieval.
     
     This function:
-    1. Embeds texts and stores them in the vector database (Qdrant)
-    2. Extracts entities and relationships and builds a knowledge graph (Neo4j) if GraphRAG is enabled
+    1. Embeds texts and stores them in the vector database (Qdrant) - always
+    2. Extracts entities and relationships and builds a knowledge graph (Neo4j) - if available
     
-    After ingestion, these documents can be retrieved when answering questions using
-    both vector similarity search and graph traversal.
+    Automatically uses GraphRAG if Neo4j is configured and available,
+    otherwise uses standard RAG. No errors or warnings are shown.
     
     Args:
         texts: List of string documents to add to the knowledge base.
-        use_graphrag: Override GraphRAG setting (None uses settings.enable_graphrag).
+        use_graphrag: Override GraphRAG (None = auto-detect, True = force enable, False = disable).
         
     Raises:
         IngestionError: If document ingestion fails.
-        GraphError: If graph construction fails (when GraphRAG is enabled).
         
     Example:
         >>> ingest([
@@ -155,26 +161,31 @@ def ingest(texts: List[str], use_graphrag: Optional[bool] = None) -> None:
         ...     "RAG stands for Retrieval Augmented Generation."
         ... ])
     """
-    use_graph = use_graphrag if use_graphrag is not None else settings.enable_graphrag
+    # Auto-detect: use GraphRAG if explicitly enabled OR if Neo4j is available
+    if use_graphrag is None:
+        # Auto-detect: check if GraphRAG is available
+        graph_store = get_graph_store()
+        use_graph = (graph_store.driver is not None)
+    else:
+        use_graph = use_graphrag
     
     # 1. Vector Store Ingestion (always)
     store = get_vector_store()
     store.add_texts(texts)
     
-    # 2. Graph Construction (if enabled)
+    # 2. Graph Construction (if available)
     if use_graph:
         try:
             graph_store = get_graph_store()
-            logger.info(f"Building knowledge graph for {len(texts)} documents...")
-            
-            for i, text in enumerate(texts):
-                if text.strip():  # Skip empty texts
-                    graph_store.add_document_to_graph(text, doc_id=f"doc_{i}")
-                    logger.debug(f"Processed document {i+1}/{len(texts)} for graph")
-            
-            logger.info("Knowledge graph construction complete")
-        except Exception as e:
-            logger.error(f"Graph construction failed: {e}")
-            # Don't fail completely - vector search still works
-            if settings.enable_graphrag:
-                raise  # Only raise if GraphRAG was explicitly enabled
+            # Check if GraphStore actually has a connection (Neo4j might be unavailable)
+            if graph_store.driver is not None:
+                logger.debug(f"Building knowledge graph for {len(texts)} documents...")
+                
+                for i, text in enumerate(texts):
+                    if text.strip():  # Skip empty texts
+                        graph_store.add_document_to_graph(text, doc_id=f"doc_{i}")
+                
+                logger.debug("Knowledge graph construction complete")
+        except Exception:
+            # Silently fallback - no error logging
+            pass
