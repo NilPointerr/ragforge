@@ -25,6 +25,22 @@ cd ragforge
 pip install .
 ```
 
+## Examples
+
+Check out the `examples/` directory for complete working examples:
+
+- **`examples/example.py`** - Basic RAG usage
+- **`examples/example_graphrag.py`** - GraphRAG with Neo4j
+- **`examples/example_file_ingestion.py`** - File ingestion examples
+- **`examples/example_ingest_file.py`** - Simplified file ingestion
+
+Run any example:
+```bash
+uv run examples/example.py
+# or
+python examples/example.py
+```
+
 ## Quick Start
 
 ### 1. Set API Key
@@ -41,6 +57,7 @@ GROQ_API_KEY=your_groq_api_key
 
 ### 2. Use the Package
 
+**Option A: Ingest from text list**
 ```python
 from ragforge import ask, ingest
 
@@ -50,8 +67,31 @@ ingest([
     "It uses knowledge graphs to extract and organize information from raw text.",
     "GraphRAG improves upon standard RAG by providing better context for complex queries."
 ])
+```
 
-# Ask questions
+**Option B: Ingest from text file**
+```python
+from ragforge import ask, ingest_from_file
+
+# Ingest from a text file (works with both GraphRAG and standard RAG)
+ingest_from_file("documents/knowledge.txt")
+
+# Or ingest with chunking for large files
+ingest_from_file("large_document.txt", chunk_size=1000, chunk_overlap=100)
+```
+
+**Option C: Ingest from directory**
+```python
+from ragforge import ingest_from_directory
+
+# Ingest all .txt files from a directory
+count = ingest_from_directory("documents/", pattern="*.txt")
+print(f"Ingested {count} files")
+```
+
+**Query the knowledge base**
+```python
+# Ask questions (automatically uses GraphRAG if available)
 result = ask("What is GraphRAG?")
 
 print(result["answer"])
@@ -152,14 +192,104 @@ docker run -d \
 - GraphRAG is enabled by default but can be disabled via `RAGFORGE_ENABLE_GRAPHRAG=false`
 - If Neo4j is not available, Ragforge falls back to vector-only RAG
 
+## Functions Reference
+
+Quick reference for all available functions in Ragforge.
+
+### `ask(question: str, use_graphrag: Optional[bool] = None) -> Dict[str, Any]`
+
+Ask a question and get an answer with supporting facts. Automatically uses GraphRAG if available.
+
+**Example:**
+```python
+from ragforge import ask
+
+result = ask("What is GraphRAG?")
+print(result["answer"])  # The generated answer
+print(result["facts"])    # List of facts used
+```
+
+---
+
+### `ingest(texts: List[str], use_graphrag: Optional[bool] = None) -> None`
+
+Add documents from a list to the knowledge base. Works with both GraphRAG and standard RAG.
+
+**Example:**
+```python
+from ragforge import ingest
+
+ingest([
+    "Python is a programming language.",
+    "RAG stands for Retrieval Augmented Generation."
+])
+```
+
+---
+
+### `ingest_file(file_path: Union[str, Path], chunk_size: int, gap_size: int = 0, encoding: str = "utf-8", use_graphrag: Optional[bool] = None) -> None`
+
+Ingest a text file with specified chunk size and gap size. Always chunks the file.
+
+**Example:**
+```python
+from ragforge import ingest_file
+
+# Ingest with 1000 char chunks and 100 char gap
+ingest_file("document.txt", chunk_size=1000, gap_size=100)
+
+# Ingest with no gap
+ingest_file("document.txt", chunk_size=500, gap_size=0)
+```
+
+---
+
+### `ingest_from_file(file_path: Union[str, Path], chunk_size: Optional[int] = None, chunk_overlap: int = 0, encoding: str = "utf-8", use_graphrag: Optional[bool] = None) -> None`
+
+Extract text from a file and ingest it. Chunking is optional.
+
+**Example:**
+```python
+from ragforge import ingest_from_file
+
+# Ingest entire file as one document
+ingest_from_file("knowledge.txt")
+
+# Ingest with chunking
+ingest_from_file("large_file.txt", chunk_size=1000, chunk_overlap=100)
+```
+
+---
+
+### `ingest_from_directory(directory_path: Union[str, Path], pattern: str = "*.txt", chunk_size: Optional[int] = None, chunk_overlap: int = 0, encoding: str = "utf-8", recursive: bool = True, use_graphrag: Optional[bool] = None) -> int`
+
+Ingest all matching files from a directory. Returns the number of files ingested.
+
+**Example:**
+```python
+from ragforge import ingest_from_directory
+
+# Ingest all .txt files
+count = ingest_from_directory("documents/", pattern="*.txt")
+print(f"Ingested {count} files")
+
+# Ingest .md files recursively
+ingest_from_directory("docs/", pattern="*.md", recursive=True)
+```
+
+---
+
 ## API Reference
 
-### `ingest(texts: List[str]) -> None`
+Detailed API documentation with full parameter descriptions.
+
+### `ingest(texts: List[str], use_graphrag: Optional[bool] = None) -> None`
 
 Add documents to the knowledge base for retrieval.
 
 **Parameters:**
 - `texts`: List of string documents to add
+- `use_graphrag`: Override GraphRAG (None = auto-detect, True = force enable, False = disable)
 
 **Example:**
 ```python
@@ -169,12 +299,79 @@ ingest([
 ])
 ```
 
-### `ask(question: str) -> Dict[str, Any]`
+### `ingest_from_file(file_path: Union[str, Path], chunk_size: Optional[int] = None, chunk_overlap: int = 0, encoding: str = "utf-8", use_graphrag: Optional[bool] = None) -> None`
 
-Ask a question and get an answer with supporting facts.
+Extract text from a file and ingest it into the knowledge base. Works with both GraphRAG and standard RAG automatically.
+
+**Parameters:**
+- `file_path`: Path to the text file (.txt) to ingest
+- `chunk_size`: Optional chunk size for splitting large files (None = entire file as one document)
+- `chunk_overlap`: Number of characters to overlap between chunks (default: 0)
+- `encoding`: File encoding (default: 'utf-8')
+- `use_graphrag`: Override GraphRAG (None = auto-detect)
+
+**Example:**
+```python
+# Ingest entire file
+ingest_from_file("documents/knowledge.txt")
+
+# Ingest with chunking (for large files)
+ingest_from_file("documents/large_file.txt", chunk_size=1000, chunk_overlap=100)
+```
+
+### `ingest_file(file_path: Union[str, Path], chunk_size: int, gap_size: int = 0, encoding: str = "utf-8", use_graphrag: Optional[bool] = None) -> None`
+
+Simplified function to ingest a text file with specified chunk size and gap size.
+
+**Parameters:**
+- `file_path`: Path to the text file to ingest
+- `chunk_size`: Size of each chunk in characters (required)
+- `gap_size`: Gap/overlap size between chunks in characters (default: 0)
+- `encoding`: File encoding (default: 'utf-8')
+- `use_graphrag`: Override GraphRAG (None = auto-detect)
+
+**Example:**
+```python
+# Ingest file with 1000 char chunks and 100 char gap
+ingest_file("document.txt", chunk_size=1000, gap_size=100)
+
+# Ingest with no gap between chunks
+ingest_file("document.txt", chunk_size=500, gap_size=0)
+```
+
+### `ingest_from_directory(directory_path: Union[str, Path], pattern: str = "*.txt", chunk_size: Optional[int] = None, chunk_overlap: int = 0, encoding: str = "utf-8", recursive: bool = True, use_graphrag: Optional[bool] = None) -> int`
+
+Extract text from all matching files in a directory and ingest them.
+
+**Parameters:**
+- `directory_path`: Path to the directory containing text files
+- `pattern`: File pattern to match (default: '*.txt')
+- `chunk_size`: Optional chunk size for splitting large files
+- `chunk_overlap`: Number of characters to overlap between chunks
+- `encoding`: File encoding (default: 'utf-8')
+- `recursive`: Whether to search subdirectories (default: True)
+- `use_graphrag`: Override GraphRAG (None = auto-detect)
+
+**Returns:**
+- Number of files successfully ingested
+
+**Example:**
+```python
+# Ingest all .txt files in a directory
+count = ingest_from_directory("documents/")
+print(f"Ingested {count} files")
+
+# Ingest only .md files recursively
+ingest_from_directory("docs/", pattern="*.md", recursive=True)
+```
+
+### `ask(question: str, use_graphrag: Optional[bool] = None) -> Dict[str, Any]`
+
+Ask a question and get an answer with supporting facts. Automatically uses GraphRAG if available, otherwise uses standard RAG.
 
 **Parameters:**
 - `question`: The question to answer
+- `use_graphrag`: Override GraphRAG (None = auto-detect, True = force enable, False = disable)
 
 **Returns:**
 - `dict` with keys:

@@ -23,7 +23,11 @@ dependencies = [
     "neo4j>=5.0",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["ragforge*"]
 
 [project.urls]
