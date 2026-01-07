@@ -25,18 +25,19 @@ class GraphStore:
     def __init__(self):
         """
         Initialize the Neo4j graph store client.
+        Silently falls back if Neo4j is unavailable - no errors or warnings.
         """
-        if not settings.enable_graphrag:
-            logger.info("GraphRAG is disabled. Skipping Neo4j initialization.")
-            self.driver = None
+        self.driver = None
+        
+        # If explicitly disabled, skip initialization
+        if settings.enable_graphrag is False:
             return
             
+        # If no password configured, silently skip (auto-detect mode)
         if not settings.neo4j_password:
-            raise ConfigurationError(
-                "NEO4J_PASSWORD environment variable is not set. "
-                "Please set RAGFORGE_NEO4J_PASSWORD to use GraphRAG functionality."
-            )
+            return
         
+        # Try to connect - silently fail if unavailable
         try:
             self.driver = GraphDatabase.driver(
                 settings.neo4j_uri,
@@ -44,22 +45,14 @@ class GraphStore:
             )
             # Verify connection
             self.driver.verify_connectivity()
-            logger.info(f"Connected to Neo4j at {settings.neo4j_uri}")
+            logger.debug(f"GraphRAG enabled: Connected to Neo4j at {settings.neo4j_uri}")
             
             # Initialize schema
             self._initialize_schema()
             
-        except ServiceUnavailable as e:
-            raise GraphError(
-                f"Could not connect to Neo4j at {settings.neo4j_uri}. "
-                f"Make sure Neo4j is running. Error: {e}"
-            )
-        except AuthError as e:
-            raise GraphError(
-                f"Neo4j authentication failed. Check your credentials. Error: {e}"
-            )
-        except Exception as e:
-            raise GraphError(f"Failed to initialize Neo4j client: {e}")
+        except (ServiceUnavailable, AuthError, Exception):
+            # Silently fail - fallback to standard RAG
+            self.driver = None
     
     def _initialize_schema(self):
         """
@@ -86,7 +79,7 @@ class GraphStore:
                 FOR (e:Entity) ON (e.type)
             """)
             
-            logger.info("Neo4j schema initialized")
+            logger.debug("Neo4j schema initialized")
     
     def extract_entities_and_relationships(self, text: str) -> Dict[str, Any]:
         """

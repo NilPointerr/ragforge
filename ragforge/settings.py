@@ -68,10 +68,10 @@ class Settings(BaseSettings):
         le=50,
         description="Maximum number of context chunks to retrieve"
     )
-    enable_graphrag: bool = Field(
-        True,
+    enable_graphrag: Optional[bool] = Field(
+        None,
         env="RAGFORGE_ENABLE_GRAPHRAG",
-        description="Enable GraphRAG functionality (requires Neo4j)"
+        description="Enable GraphRAG functionality (None = auto-detect based on Neo4j availability)"
     )
     
     # Neo4j Settings

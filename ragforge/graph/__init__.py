@@ -9,11 +9,11 @@ def get_graph_store() -> GraphStore:
     This function ensures only one GraphStore instance is created,
     reusing the same Neo4j connection across the application.
     
+    If Neo4j is unavailable, returns a GraphStore instance with driver=None,
+    which gracefully falls back to vector-only RAG.
+    
     Returns:
-        GraphStore: The singleton graph store instance.
-        
-    Raises:
-        GraphError: If graph store initialization fails.
+        GraphStore: The singleton graph store instance (may have driver=None if Neo4j unavailable).
     """
     global _graph_instance
     if _graph_instance is None:
