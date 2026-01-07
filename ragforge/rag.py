@@ -1,11 +1,12 @@
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from ragforge.llm import get_default_llm
 from ragforge.vector import get_vector_store
 from ragforge.settings import settings
 from ragforge.errors import RagforgeError
+from ragforge.graph import get_graph_store
 
 logger = logging.getLogger(__name__)
 
@@ -25,31 +26,58 @@ Example format:
 }
 """
 
-def ask(question: str) -> Dict[str, Any]:
+def ask(question: str, use_graphrag: Optional[bool] = None) -> Dict[str, Any]:
     """
-    The main entry point for the RAG pipeline.
+    The main entry point for the RAG/GraphRAG pipeline.
+    
+    Uses hybrid retrieval combining vector search and knowledge graph traversal
+    when GraphRAG is enabled.
     
     Args:
         question: The user's question.
+        use_graphrag: Override GraphRAG setting (None uses settings.enable_graphrag).
         
     Returns:
         A dictionary containing "facts" (list) and "answer" (str).
     """
     try:
+        use_graph = use_graphrag if use_graphrag is not None else settings.enable_graphrag
+        
         # 1. Vector Retrieval
         store = get_vector_store()
         retrieved_docs = store.search(question, limit=settings.max_context_chunks)
         
-        if not retrieved_docs:
+        # 2. Graph Retrieval (if enabled)
+        graph_context = ""
+        if use_graph:
+            try:
+                graph_store = get_graph_store()
+                graph_context = graph_store.get_graph_context(question, max_entities=5)
+                if graph_context:
+                    logger.info("Retrieved graph context for query")
+            except Exception as e:
+                logger.warning(f"GraphRAG retrieval failed, continuing with vector search only: {e}")
+        
+        # 3. Context Construction
+        context_parts = []
+        
+        if retrieved_docs:
+            context_parts.append("Vector Search Results:")
+            context_parts.extend([f"- {doc}" for doc in retrieved_docs])
+        
+        if graph_context:
+            context_parts.append("")
+            context_parts.append(graph_context)
+        
+        if not context_parts:
             return {
                 "facts": [],
                 "answer": "I could not find any relevant information in the knowledge base to answer your question."
             }
-
-        # 2. Context Construction
-        context_str = "\n".join([f"- {doc}" for doc in retrieved_docs])
         
-        # 3. Grounded Prompt
+        context_str = "\n".join(context_parts)
+        
+        # 4. Grounded Prompt
         full_prompt = f"""Context:
 {context_str}
 
@@ -58,11 +86,11 @@ Question:
 
 Answer (in JSON):"""
 
-        # 4. LLM Answer
+        # 5. LLM Answer
         llm = get_default_llm()
         raw_response = llm.generate_response(full_prompt, SYSTEM_PROMPT)
         
-        # 5. Parse Response
+        # 6. Parse Response
         try:
             # Clean up potential markdown code blocks if the LLM adds them
             cleaned_response = raw_response.strip()
@@ -102,18 +130,24 @@ Answer (in JSON):"""
             "answer": "An unexpected system error occurred."
         }
 
-def ingest(texts: List[str]) -> None:
+def ingest(texts: List[str], use_graphrag: Optional[bool] = None) -> None:
     """
     Add documents to the knowledge base for retrieval.
     
-    This function embeds the provided texts and stores them in the vector database.
-    After ingestion, these documents can be retrieved when answering questions.
+    This function:
+    1. Embeds texts and stores them in the vector database (Qdrant)
+    2. Extracts entities and relationships and builds a knowledge graph (Neo4j) if GraphRAG is enabled
+    
+    After ingestion, these documents can be retrieved when answering questions using
+    both vector similarity search and graph traversal.
     
     Args:
         texts: List of string documents to add to the knowledge base.
+        use_graphrag: Override GraphRAG setting (None uses settings.enable_graphrag).
         
     Raises:
         IngestionError: If document ingestion fails.
+        GraphError: If graph construction fails (when GraphRAG is enabled).
         
     Example:
         >>> ingest([
@@ -121,5 +155,26 @@ def ingest(texts: List[str]) -> None:
         ...     "RAG stands for Retrieval Augmented Generation."
         ... ])
     """
+    use_graph = use_graphrag if use_graphrag is not None else settings.enable_graphrag
+    
+    # 1. Vector Store Ingestion (always)
     store = get_vector_store()
     store.add_texts(texts)
+    
+    # 2. Graph Construction (if enabled)
+    if use_graph:
+        try:
+            graph_store = get_graph_store()
+            logger.info(f"Building knowledge graph for {len(texts)} documents...")
+            
+            for i, text in enumerate(texts):
+                if text.strip():  # Skip empty texts
+                    graph_store.add_document_to_graph(text, doc_id=f"doc_{i}")
+                    logger.debug(f"Processed document {i+1}/{len(texts)} for graph")
+            
+            logger.info("Knowledge graph construction complete")
+        except Exception as e:
+            logger.error(f"Graph construction failed: {e}")
+            # Don't fail completely - vector search still works
+            if settings.enable_graphrag:
+                raise  # Only raise if GraphRAG was explicitly enabled

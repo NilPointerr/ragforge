@@ -86,6 +86,14 @@ Ragforge uses Pydantic for configuration management, supporting both environment
 #### RAG Settings
 
 - **`RAGFORGE_MAX_CHUNKS`**: Maximum context chunks to retrieve (default: `5`, range: 1-50)
+- **`RAGFORGE_ENABLE_GRAPHRAG`**: Enable GraphRAG functionality (default: `true`)
+
+#### Neo4j Settings (for GraphRAG)
+
+- **`RAGFORGE_NEO4J_URI`**: Neo4j database URI (default: `bolt://localhost:7687`)
+- **`RAGFORGE_NEO4J_USER`**: Neo4j username (default: `neo4j`)
+- **`RAGFORGE_NEO4J_PASSWORD`**: Neo4j password (required if GraphRAG enabled)
+- **`RAGFORGE_NEO4J_DATABASE`**: Neo4j database name (default: `neo4j`)
 
 ### Example Configuration
 
@@ -96,6 +104,12 @@ GROQ_API_KEY=your_groq_api_key
 RAGFORGE_LLM_MODEL=llama-3.3-70b-versatile
 RAGFORGE_MAX_CHUNKS=10
 RAGFORGE_QDRANT_PATH=./my_qdrant_data
+
+# GraphRAG Settings (optional)
+RAGFORGE_ENABLE_GRAPHRAG=true
+RAGFORGE_NEO4J_URI=bolt://localhost:7687
+RAGFORGE_NEO4J_USER=neo4j
+RAGFORGE_NEO4J_PASSWORD=your_neo4j_password
 ```
 
 Or set environment variables:
@@ -121,7 +135,7 @@ docker run -d \
   qdrant/qdrant
 ```
 
-### 2. Start Neo4j (Optional - for future GraphRAG features)
+### 2. Start Neo4j (Required for GraphRAG)
 
 ```bash
 docker run -d \
@@ -132,7 +146,11 @@ docker run -d \
   neo4j:5
 ```
 
-**Note**: Ragforge currently uses local Qdrant storage by default. The Docker setup is optional and mainly for development/testing or if you prefer containerized services.
+**Note**: 
+- Ragforge uses local Qdrant storage by default (no Docker needed)
+- Neo4j is required only if you want to use GraphRAG functionality
+- GraphRAG is enabled by default but can be disabled via `RAGFORGE_ENABLE_GRAPHRAG=false`
+- If Neo4j is not available, Ragforge falls back to vector-only RAG
 
 ## API Reference
 
@@ -409,12 +427,32 @@ ingest(["Your knowledge here"])
 result = ask("Your question")
 ```
 
+## GraphRAG vs Standard RAG
+
+Ragforge supports both standard RAG and GraphRAG:
+
+- **Standard RAG**: Uses vector similarity search only (works without Neo4j)
+- **GraphRAG**: Combines vector search with knowledge graph traversal (requires Neo4j)
+
+GraphRAG provides:
+- Better handling of complex, multi-hop queries
+- Entity relationship understanding
+- Context from graph structure
+- Improved answers for questions requiring understanding of connections
+
+To disable GraphRAG and use standard RAG only:
+```bash
+export RAGFORGE_ENABLE_GRAPHRAG=false
+```
+
 ## Architecture
 
 - **Settings**: Pydantic-based configuration with automatic validation
 - **Vector Store**: Local Qdrant with FastEmbed for embeddings
-- **LLM**: Groq API integration with retry logic
-- **Singleton Pattern**: Efficient resource management for both vector store and LLM
+- **Graph Store**: Neo4j knowledge graph for entity and relationship storage
+- **LLM**: Groq API integration with retry logic for both generation and entity extraction
+- **Singleton Pattern**: Efficient resource management for vector store, graph store, and LLM
+- **Hybrid Retrieval**: Combines vector similarity and graph traversal for optimal context
 
 ## License
 

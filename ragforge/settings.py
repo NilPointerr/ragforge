@@ -1,6 +1,6 @@
 import os
 from typing import Optional, Dict
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Embedding model dimensions mapping
@@ -68,6 +68,49 @@ class Settings(BaseSettings):
         le=50,
         description="Maximum number of context chunks to retrieve"
     )
+    enable_graphrag: bool = Field(
+        True,
+        env="RAGFORGE_ENABLE_GRAPHRAG",
+        description="Enable GraphRAG functionality (requires Neo4j)"
+    )
+    
+    # Neo4j Settings
+    # Uses NEO4J_* environment variables (supports both NEO4J_* and RAGFORGE_NEO4J_*)
+    neo4j_uri: Optional[str] = Field(
+        default=None,
+        description="Neo4j database URI"
+    )
+    neo4j_user: str = Field(
+        default="neo4j",
+        description="Neo4j username"
+    )
+    neo4j_password: Optional[str] = Field(
+        default=None,
+        description="Neo4j password"
+    )
+    neo4j_database: str = Field(
+        default="neo4j",
+        description="Neo4j database name"
+    )
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_neo4j_from_env(cls, data: dict) -> dict:
+        """Set Neo4j values from environment variables if not provided."""
+        if data is None:
+            data = {}
+        
+        # Check for NEO4J_* first, then RAGFORGE_NEO4J_* as fallback
+        if "neo4j_uri" not in data or data.get("neo4j_uri") is None:
+            data["neo4j_uri"] = os.getenv("NEO4J_URI") or os.getenv("RAGFORGE_NEO4J_URI") or "bolt://localhost:7687"
+        if "neo4j_user" not in data or not data.get("neo4j_user"):
+            data["neo4j_user"] = os.getenv("NEO4J_USER") or os.getenv("RAGFORGE_NEO4J_USER") or "neo4j"
+        if "neo4j_password" not in data or data.get("neo4j_password") is None:
+            data["neo4j_password"] = os.getenv("NEO4J_PASSWORD") or os.getenv("RAGFORGE_NEO4J_PASSWORD")
+        if "neo4j_database" not in data or not data.get("neo4j_database"):
+            data["neo4j_database"] = os.getenv("NEO4J_DATABASE") or os.getenv("RAGFORGE_NEO4J_DATABASE") or "neo4j"
+        
+        return data
     
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -17,3 +17,7 @@ class RetrievalError(RagforgeError):
 class IngestionError(RagforgeError):
     """Raised when document ingestion fails."""
     pass
+
+class GraphError(RagforgeError):
+    """Raised when graph operations fail."""
+    pass
