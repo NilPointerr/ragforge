@@ -19,11 +19,34 @@ class Settings(BaseSettings):
     """
     
     # LLM Settings
+    llm_provider: str = Field(
+        "groq",
+        env="RAGFORGE_LLM_PROVIDER",
+        description="LLM provider to use (groq, openai, etc.)"
+    )
     groq_api_key: Optional[str] = Field(None, env="GROQ_API_KEY", description="Groq API key for LLM access")
     llm_model: str = Field(
         "llama-3.3-70b-versatile", 
         env="RAGFORGE_LLM_MODEL",
         description="LLM model to use for generation"
+    )
+    default_system_prompt: str = Field(
+        """You are a precise and helpful assistant.
+You must answer the user's question ONLY using the provided context facts.
+Do not use outside knowledge.
+If the facts do not contain the answer, state that you cannot answer based on the available information.
+
+Your output must be a valid JSON object with exactly two keys:
+1. "facts": A list of strings, where each string is a specific fact from the context used to answer the question.
+2. "answer": A string containing the final answer.
+
+Example format:
+{
+  "facts": ["GraphRAG is a method...", "It uses knowledge graphs..."],
+  "answer": "GraphRAG is a method that uses knowledge graphs..."
+}""",
+        env="RAGFORGE_SYSTEM_PROMPT",
+        description="Default system prompt for LLM"
     )
     llm_timeout: int = Field(
         30, 
@@ -40,6 +63,11 @@ class Settings(BaseSettings):
     )
 
     # Vector Store Settings
+    vector_store_provider: str = Field(
+        "qdrant",
+        env="RAGFORGE_VECTOR_STORE_PROVIDER",
+        description="Vector store provider to use (qdrant, pinecone, etc.)"
+    )
     qdrant_path: str = Field(
         "./qdrant_data", 
         env="RAGFORGE_QDRANT_PATH",
@@ -68,12 +96,28 @@ class Settings(BaseSettings):
         le=50,
         description="Maximum number of context chunks to retrieve"
     )
+    retrieval_strategy: str = Field(
+        "hybrid",
+        env="RAGFORGE_RETRIEVAL_STRATEGY",
+        description="Retrieval strategy (vector_only, hybrid)"
+    )
+    chunking_strategy: str = Field(
+        "sentence",
+        env="RAGFORGE_CHUNKING_STRATEGY",
+        description="Chunking strategy (sentence, character)"
+    )
     enable_graphrag: Optional[bool] = Field(
         None,
         env="RAGFORGE_ENABLE_GRAPHRAG",
         description="Enable GraphRAG functionality (None = auto-detect based on Neo4j availability)"
     )
     
+    # Graph Store Settings
+    graph_store_provider: str = Field(
+        "neo4j",
+        env="RAGFORGE_GRAPH_STORE_PROVIDER",
+        description="Graph store provider to use (neo4j, networkx, etc.)"
+    )
     # Neo4j Settings
     # Uses NEO4J_* environment variables (supports both NEO4J_* and RAGFORGE_NEO4J_*)
     neo4j_uri: Optional[str] = Field(
@@ -116,6 +160,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="allow",  # Allow extra fields for extensibility
     )
     
     @property

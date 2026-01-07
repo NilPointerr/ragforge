@@ -4,13 +4,14 @@ from typing import List, Dict, Any, Optional, Set
 from neo4j import GraphDatabase, Driver
 from neo4j.exceptions import ServiceUnavailable, AuthError
 
+from ragforge.core.base import BaseGraphStore
 from ragforge.settings import settings
 from ragforge.llm import get_default_llm
 from ragforge.errors import GraphError, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-class GraphStore:
+class GraphStore(BaseGraphStore):
     """
     Manages the Neo4j knowledge graph for GraphRAG functionality.
     
@@ -378,6 +379,15 @@ Return only valid JSON. Do not include any explanations or markdown formatting."
             logger.error(f"Error clearing graph: {e}")
             raise GraphError(f"Failed to clear graph: {e}")
     
+    def is_available(self) -> bool:
+        """
+        Check if the graph store is available and connected.
+        
+        Returns:
+            True if available, False otherwise.
+        """
+        return self.driver is not None
+
     def close(self):
         """Close the Neo4j driver connection."""
         if self.driver:

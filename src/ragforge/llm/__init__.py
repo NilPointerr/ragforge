@@ -1,17 +1,16 @@
 from ragforge.llm.groq import GroqLLM
-from ragforge.llm.base import BaseLLM
+from ragforge.core.base import BaseLLM
+from ragforge.core.registry import LLMRegistry
 
-_llm_instance = None
+# Register default providers
+LLMRegistry.register("groq", GroqLLM)
 
 def get_default_llm() -> BaseLLM:
     """
-    Returns the singleton instance of the default LLM provider (Groq).
-    Reuses the same instance across calls to avoid creating multiple connections.
+    Returns the singleton instance of the default LLM provider.
+    Uses the registry to get the configured provider.
     
     Returns:
         BaseLLM: The singleton LLM instance.
     """
-    global _llm_instance
-    if _llm_instance is None:
-        _llm_instance = GroqLLM()
-    return _llm_instance
+    return LLMRegistry.get_provider(use_singleton=True)

@@ -10,8 +10,30 @@ from pathlib import Path
 
 from ragforge.rag import ingest
 from ragforge.errors import IngestionError
+from ragforge.strategies.chunking import (
+    SentenceChunkingStrategy,
+    CharacterChunkingStrategy,
+)
+from ragforge.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Initialize chunking strategy
+_chunking_strategy = None
+
+def _get_chunking_strategy():
+    """Get the configured chunking strategy."""
+    global _chunking_strategy
+    if _chunking_strategy is None:
+        strategy_name = settings.chunking_strategy
+        if strategy_name == "sentence":
+            _chunking_strategy = SentenceChunkingStrategy()
+        elif strategy_name == "character":
+            _chunking_strategy = CharacterChunkingStrategy()
+        else:
+            logger.warning(f"Unknown chunking strategy: {strategy_name}, using 'sentence'")
+            _chunking_strategy = SentenceChunkingStrategy()
+    return _chunking_strategy
 
 
 def ingest_from_file(
@@ -79,7 +101,8 @@ def ingest_from_file(
     
     # Chunk the content if chunk_size is specified
     if chunk_size and chunk_size > 0:
-        texts = _chunk_text(content, chunk_size, chunk_overlap)
+        chunker = _get_chunking_strategy()
+        texts = chunker.chunk(content, chunk_size, chunk_overlap)
         logger.info(f"Split file into {len(texts)} chunks")
     else:
         texts = [content]
@@ -228,7 +251,8 @@ def ingest_file(
         return
     
     # Chunk the content
-    texts = _chunk_text(content, chunk_size, gap_size)
+    chunker = _get_chunking_strategy()
+    texts = chunker.chunk(content, chunk_size, gap_size)
     logger.info(f"Split file {file_path} into {len(texts)} chunks (chunk_size={chunk_size}, gap_size={gap_size})")
     
     # Ingest using the main ingest function
@@ -239,9 +263,14 @@ def ingest_file(
         raise IngestionError(f"Failed to ingest file {file_path}: {e}")
 
 
+# _chunk_text is deprecated - use chunking strategies instead
+# Kept for backward compatibility if needed
 def _chunk_text(text: str, chunk_size: int, chunk_overlap: int = 0) -> List[str]:
     """
     Split text into chunks with optional overlap.
+    
+    DEPRECATED: Use chunking strategies instead.
+    This function is kept for backward compatibility.
     
     Args:
         text: The text to chunk.
@@ -251,37 +280,5 @@ def _chunk_text(text: str, chunk_size: int, chunk_overlap: int = 0) -> List[str]
     Returns:
         List of text chunks.
     """
-    if chunk_size <= 0:
-        return [text]
-    
-    if chunk_overlap >= chunk_size:
-        chunk_overlap = chunk_size - 1
-    
-    chunks = []
-    start = 0
-    text_length = len(text)
-    
-    while start < text_length:
-        end = start + chunk_size
-        chunk = text[start:end]
-        
-        # Try to break at sentence boundary if not at end
-        if end < text_length and chunk_size > 100:
-            # Look for sentence endings in the last 20% of chunk
-            search_start = max(0, chunk_size - chunk_size // 5)
-            for i in range(len(chunk) - 1, search_start, -1):
-                if chunk[i] in '.!?\n':
-                    chunk = chunk[:i+1]
-                    end = start + len(chunk)
-                    break
-        
-        chunks.append(chunk.strip())
-        
-        # Move start position with overlap
-        start = end - chunk_overlap if chunk_overlap > 0 else end
-        
-        # Prevent infinite loop
-        if start >= text_length:
-            break
-    
-    return [chunk for chunk in chunks if chunk]  # Remove empty chunks
+    chunker = _get_chunking_strategy()
+    return chunker.chunk(text, chunk_size, chunk_overlap)

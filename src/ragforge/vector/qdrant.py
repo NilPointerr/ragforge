@@ -1,10 +1,11 @@
 import os
 import logging
 import uuid
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
+from ragforge.core.base import BaseVectorStore
 from ragforge.settings import settings
 from ragforge.errors import RetrievalError, IngestionError
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 import atexit
 
-class VectorStore:
+class VectorStore(BaseVectorStore):
     """
     Manages the Qdrant vector store using FastEmbed for embeddings.
     
@@ -82,30 +83,48 @@ class VectorStore:
         except Exception as e:
             raise RetrievalError(f"Failed to verify/create collection: {e}")
 
-    def add_texts(self, texts: List[str]) -> None:
+    def add_texts(
+        self,
+        texts: List[str],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+        ids: Optional[List[str]] = None
+    ) -> None:
         """
         Embeds and adds texts to the vector store using FastEmbed.
         
         Args:
             texts: List of string documents to add.
+            metadatas: Optional list of metadata dictionaries (one per text).
+            ids: Optional list of document IDs. If None, will be auto-generated.
         """
         if not texts:
             return
 
+        if metadatas is None:
+            metadatas = [{}] * len(texts)
+        elif len(metadatas) != len(texts):
+            raise ValueError("metadatas must have the same length as texts")
+
+        if ids is None:
+            ids = [str(uuid.uuid4()) for _ in texts]
+        elif len(ids) != len(texts):
+            raise ValueError("ids must have the same length as texts")
+
         try:
             points = [
                 models.PointStruct(
-                    id=str(uuid.uuid4()),
+                    id=doc_id,
                     vector=models.Document(
                         text=text, 
                         model=settings.embedding_model
                     ),
                     payload={
                         "text": text,
-                        "document": text # Redundant but safe for different retrieval patterns
+                        "document": text,  # Redundant but safe for different retrieval patterns
+                        **metadata  # Merge metadata into payload
                     }
                 )
-                for text in texts
+                for text, metadata, doc_id in zip(texts, metadatas, ids)
             ]
 
             self.client.upsert(
@@ -115,25 +134,50 @@ class VectorStore:
         except Exception as e:
             raise IngestionError(f"Failed to add texts to vector store: {e}")
 
-    def search(self, query: str, limit: int = 5) -> List[str]:
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        filter: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> List[str]:
         """
         Searches for relevant texts using FastEmbed.
         
         Args:
             query: The question to answer.
             limit: Number of results to return.
+            filter: Optional metadata filter dictionary.
+            **kwargs: Additional provider-specific parameters.
             
         Returns:
             List of relevant text chunks.
         """
         try:
+            # Build query filter if provided
+            query_filter = None
+            if filter:
+                # Convert filter dict to Qdrant filter format
+                # Simple implementation - can be extended
+                conditions = []
+                for key, value in filter.items():
+                    conditions.append(
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value)
+                        )
+                    )
+                if conditions:
+                    query_filter = models.Filter(must=conditions)
+
             result = self.client.query_points(
                 collection_name=settings.collection_name,
                 query=models.Document(
                     text=query, 
                     model=settings.embedding_model
                 ),
-                limit=limit
+                limit=limit,
+                query_filter=query_filter
             )
             
             hits = result.points
@@ -146,3 +190,74 @@ class VectorStore:
             ]
         except Exception as e:
             raise RetrievalError(f"Search failed: {e}")
+
+    def delete(self, ids: List[str]) -> None:
+        """
+        Delete documents by their IDs.
+        
+        Args:
+            ids: List of document IDs to delete.
+        """
+        try:
+            self.client.delete(
+                collection_name=settings.collection_name,
+                points_selector=models.PointIdsList(points=ids)
+            )
+        except Exception as e:
+            raise RetrievalError(f"Failed to delete documents: {e}")
+
+    def update(
+        self,
+        id: str,
+        text: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Update an existing document.
+        
+        Args:
+            id: Document ID to update.
+            text: Optional new text content.
+            metadata: Optional new metadata.
+        """
+        try:
+            # Get existing point
+            result = self.client.retrieve(
+                collection_name=settings.collection_name,
+                ids=[id]
+            )
+            
+            if not result:
+                raise RetrievalError(f"Document with id {id} not found")
+            
+            existing = result[0]
+            existing_payload = existing.payload or {}
+            
+            # Update payload
+            new_payload = existing_payload.copy()
+            if text:
+                new_payload["text"] = text
+                new_payload["document"] = text
+            if metadata:
+                new_payload.update(metadata)
+            
+            # Re-embed if text changed
+            if text:
+                vector = models.Document(text=text, model=settings.embedding_model)
+            else:
+                # Keep existing vector
+                vector = existing.vector
+            
+            # Upsert with updated data
+            self.client.upsert(
+                collection_name=settings.collection_name,
+                points=[
+                    models.PointStruct(
+                        id=id,
+                        vector=vector,
+                        payload=new_payload
+                    )
+                ]
+            )
+        except Exception as e:
+            raise RetrievalError(f"Failed to update document: {e}")

@@ -1,23 +1,21 @@
 from ragforge.graph.neo4j_store import GraphStore
+from ragforge.core.base import BaseGraphStore
+from ragforge.core.registry import GraphStoreRegistry
 
-_graph_instance = None
+# Register default providers
+GraphStoreRegistry.register("neo4j", GraphStore)
 
-def get_graph_store() -> GraphStore:
+def get_graph_store() -> BaseGraphStore:
     """
     Returns the singleton instance of the GraphStore.
-    
-    This function ensures only one GraphStore instance is created,
-    reusing the same Neo4j connection across the application.
+    Uses the registry to get the configured provider.
     
     If Neo4j is unavailable, returns a GraphStore instance with driver=None,
     which gracefully falls back to vector-only RAG.
     
     Returns:
-        GraphStore: The singleton graph store instance (may have driver=None if Neo4j unavailable).
+        BaseGraphStore: The singleton graph store instance (may have driver=None if Neo4j unavailable).
     """
-    global _graph_instance
-    if _graph_instance is None:
-        _graph_instance = GraphStore()
-    return _graph_instance
+    return GraphStoreRegistry.get_provider(use_singleton=True)
 
-__all__ = ["GraphStore", "get_graph_store"]
+__all__ = ["GraphStore", "get_graph_store", "BaseGraphStore"]

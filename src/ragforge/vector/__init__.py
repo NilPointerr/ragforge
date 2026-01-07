@@ -1,21 +1,19 @@
 from ragforge.vector.qdrant import VectorStore
+from ragforge.core.base import BaseVectorStore
+from ragforge.core.registry import VectorStoreRegistry
 
-_store_instance = None
+# Register default providers
+VectorStoreRegistry.register("qdrant", VectorStore)
 
-def get_vector_store() -> VectorStore:
+def get_vector_store() -> BaseVectorStore:
     """
     Returns the singleton instance of the VectorStore.
-    
-    This function ensures only one VectorStore instance is created,
-    reusing the same Qdrant client connection across the application.
+    Uses the registry to get the configured provider.
     
     Returns:
-        VectorStore: The singleton vector store instance.
+        BaseVectorStore: The singleton vector store instance.
         
     Raises:
         RetrievalError: If vector store initialization fails.
     """
-    global _store_instance
-    if _store_instance is None:
-        _store_instance = VectorStore()
-    return _store_instance
+    return VectorStoreRegistry.get_provider(use_singleton=True)
