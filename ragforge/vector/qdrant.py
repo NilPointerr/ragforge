@@ -15,38 +15,67 @@ import atexit
 class VectorStore:
     """
     Manages the Qdrant vector store using FastEmbed for embeddings.
+    
+    This class handles:
+    - Initialization of local Qdrant client
+    - Collection creation with proper vector dimensions
+    - Document ingestion with automatic embedding
+    - Semantic search over ingested documents
+    
+    The vector store uses a singleton pattern via get_vector_store()
+    to ensure only one instance is created.
     """
     
     def __init__(self):
+        """
+        Initialize the Qdrant vector store client.
+        Creates the storage directory if it doesn't exist.
+        """
         # Initialize Qdrant Client (Local)
         try:
-            os.makedirs(settings.QDRANT_PATH, exist_ok=True)
-            self.client = QdrantClient(path=settings.QDRANT_PATH)
+            os.makedirs(settings.qdrant_path, exist_ok=True)
+            self.client = QdrantClient(path=settings.qdrant_path)
             # Set the model on the client to ensure it's loaded/configured
-            self.client.set_model(settings.EMBEDDING_MODEL)
+            try:
+                self.client.set_model(settings.embedding_model)
+            except ValueError as e:
+                # Provide helpful error message for unsupported models
+                error_msg = str(e)
+                if "Unsupported embedding model" in error_msg:
+                    raise RetrievalError(
+                        f"Unsupported embedding model: '{settings.embedding_model}'. "
+                        f"Please check the Qdrant/FastEmbed documentation for supported models. "
+                        f"Common models include: 'sentence-transformers/all-MiniLM-L6-v2', "
+                        f"'nomic-ai/nomic-embed-text-v1.5', 'BAAI/bge-small-en-v1.5', etc. "
+                        f"Original error: {error_msg}"
+                    )
+                raise
             
             # Register cleanup
             atexit.register(self.client.close)
+        except RetrievalError:
+            # Re-raise our custom errors
+            raise
         except Exception as e:
-            raise RetrievalError(f"Failed to initialize Qdrant client at {settings.QDRANT_PATH}: {e}")
+            raise RetrievalError(f"Failed to initialize Qdrant client at {settings.qdrant_path}: {e}")
 
         self._ensure_collection()
 
     def _ensure_collection(self):
         """
         Ensures the Qdrant collection exists with the correct configuration.
+        Uses dynamic embedding dimension based on the configured model.
         """
         try:
-            if not self.client.collection_exists(settings.COLLECTION_NAME):
-                logger.info(f"Creating collection {settings.COLLECTION_NAME}...")
-                # We use unnamed vectors for simplicity with FastEmbed integration via Document
-                # 384 is the dimension for all-MiniLM-L6-v2. 
-                # TODO: If user changes model, this might break if dimension differs.
-                # But for "opinionated defaults", this is fine.
+            if not self.client.collection_exists(settings.collection_name):
+                logger.info(f"Creating collection {settings.collection_name}...")
+                # Use dynamic embedding dimension from settings
+                dimension = settings.embedding_dimension
+                logger.info(f"Using embedding dimension {dimension} for model {settings.embedding_model}")
                 self.client.create_collection(
-                    collection_name=settings.COLLECTION_NAME,
+                    collection_name=settings.collection_name,
                     vectors_config=models.VectorParams(
-                        size=384, 
+                        size=dimension, 
                         distance=models.Distance.COSINE
                     ),
                 )
@@ -69,7 +98,7 @@ class VectorStore:
                     id=str(uuid.uuid4()),
                     vector=models.Document(
                         text=text, 
-                        model=settings.EMBEDDING_MODEL
+                        model=settings.embedding_model
                     ),
                     payload={
                         "text": text,
@@ -80,7 +109,7 @@ class VectorStore:
             ]
 
             self.client.upsert(
-                collection_name=settings.COLLECTION_NAME,
+                collection_name=settings.collection_name,
                 points=points
             )
         except Exception as e:
@@ -99,10 +128,10 @@ class VectorStore:
         """
         try:
             result = self.client.query_points(
-                collection_name=settings.COLLECTION_NAME,
+                collection_name=settings.collection_name,
                 query=models.Document(
                     text=query, 
-                    model=settings.EMBEDDING_MODEL
+                    model=settings.embedding_model
                 ),
                 limit=limit
             )

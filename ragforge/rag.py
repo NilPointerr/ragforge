@@ -38,7 +38,7 @@ def ask(question: str) -> Dict[str, Any]:
     try:
         # 1. Vector Retrieval
         store = get_vector_store()
-        retrieved_docs = store.search(question, limit=settings.MAX_CONTEXT_CHUNKS)
+        retrieved_docs = store.search(question, limit=settings.max_context_chunks)
         
         if not retrieved_docs:
             return {
@@ -104,8 +104,22 @@ Answer (in JSON):"""
 
 def ingest(texts: List[str]) -> None:
     """
-    Helper function to add documents to the knowledge base.
-    Not part of the strict 'ask' API but necessary for usage.
+    Add documents to the knowledge base for retrieval.
+    
+    This function embeds the provided texts and stores them in the vector database.
+    After ingestion, these documents can be retrieved when answering questions.
+    
+    Args:
+        texts: List of string documents to add to the knowledge base.
+        
+    Raises:
+        IngestionError: If document ingestion fails.
+        
+    Example:
+        >>> ingest([
+        ...     "Python is a programming language.",
+        ...     "RAG stands for Retrieval Augmented Generation."
+        ... ])
     """
     store = get_vector_store()
     store.add_texts(texts)

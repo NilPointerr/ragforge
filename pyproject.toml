@@ -16,7 +16,8 @@ classifiers = [
 dependencies = [
     "groq",
     "qdrant-client",
-    "pydantic",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
     "python-dotenv",
     "fastembed>=0.7.4",
 ]

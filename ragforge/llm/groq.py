@@ -16,14 +16,15 @@ class GroqLLM(BaseLLM):
     """
 
     def __init__(self):
-        if not settings.GROQ_API_KEY:
+        """Initialize the Groq LLM client."""
+        if not settings.groq_api_key:
             raise ConfigurationError(
                 "GROQ_API_KEY environment variable is not set. "
                 "Please set it to use Ragforge."
             )
         
         try:
-            self.client = Groq(api_key=settings.GROQ_API_KEY)
+            self.client = Groq(api_key=settings.groq_api_key)
         except Exception as e:
             raise ProviderError(f"Failed to initialize Groq client: {str(e)}")
 
@@ -34,7 +35,7 @@ class GroqLLM(BaseLLM):
         retries = 0
         last_error = None
 
-        while retries < settings.LLM_MAX_RETRIES:
+        while retries < settings.llm_max_retries:
             try:
                 chat_completion = self.client.chat.completions.create(
                     messages=[
@@ -47,7 +48,7 @@ class GroqLLM(BaseLLM):
                             "content": prompt,
                         }
                     ],
-                    model=settings.LLM_MODEL,
+                    model=settings.llm_model,
                     temperature=0.1, # Low temperature for factual grounding
                 )
                 

@@ -4,8 +4,8 @@ import shutil
 import os
 
 # Clean up previous data to avoid conflicts between manual vectors and fastembed
-if os.path.exists(settings.QDRANT_PATH):
-    shutil.rmtree(settings.QDRANT_PATH)
+if os.path.exists(settings.qdrant_path):
+    shutil.rmtree(settings.qdrant_path)
 
 print("Initializing Vector Store...")
 store = get_vector_store()
